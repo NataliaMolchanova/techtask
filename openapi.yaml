@@ -1,0 +1,66 @@
+openapi: 3.0.0
+info:
+  title: Protololr techtask / Molchanova Natalia
+  description: >
+    Simple multi-player app API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Development server
+    
+paths:
+  /state/{docId}:
+    get:
+      tags:
+        - State
+      description: Gets state of existing document
+      summary: Get state
+      operationId: getState
+      parameters:
+        - $ref: "#/components/parameters/docId"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                - $ref: "#/components/schemas/state"
+components:
+  parameters:
+    docId:
+      name: docId
+      in: path
+      required: true
+      description: The ID of the document to interact with
+      schema:
+        $ref: "#/components/schemas/docId"
+
+  schemas:
+    docId:
+      description: The ID of the document 
+      type: string
+      example: new_document
+    
+    element:
+      description: Properties of the element
+      type: object
+      properties:
+        x:
+          type: integer
+          description: x coordinate
+        y: 
+          type: integer
+          description: y coordinate
+        color: 
+          type: string
+          description: color string in hex format
+
+    state: 
+      description: current state of document
+      type: object
+      properties: 
+        elements:
+          description: Properties of the elements that belong to the document
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/element"

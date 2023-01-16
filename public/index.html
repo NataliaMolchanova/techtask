@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Socket.IO chat</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      #content {
+        position:fixed;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+      }
+
+      #working_area {
+        position: relative;
+        background-color: #ddd;
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      #working_area .cursor {
+        position: absolute;
+        top: -12px;
+        left: -12px;
+        width: 0;
+        height: 0;
+        border-style: solid;
+        content: "";
+        border-width: 12px 12px 0 0;
+        z-index: 10;
+      }
+
+      #working_area .rect {
+        position: absolute;
+        width: 100px;
+        height: 100px;
+        background-color: white;
+        border-radius: 10px;
+        touch-action: none;
+        user-select: none;
+      }
+
+      #working_area .rect:hover {
+        cursor: pointer;
+        box-sizing: border-box;
+        -moz-box-sizing: border-box;
+        -webkit-box-sizing: border-box;
+        border: 5px solid whitesmoke;
+      }
+
+      #working_area .rect:active {
+        border-color: #6dc4ff;
+        border-width: 6px;
+      }
+
+      #buttons {
+        padding: 10px;
+        flex-basis: 25%;    
+        background-color:#4c87ad;  
+      }
+    </style>
+  </head>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <body>
+    <div id="content">
+      <div id="working_area"></div>
+      <div id="buttons">
+        <button id="rect">Add rectangle</button>
+        </br>
+        <input id="docId" value="default"/><button id="changeDoc">Change doc</button>
+      </div>
+    </div>
+  </body>
+  <script>
+    const BASE_URL = 'http: //localhost:3000';
+    let docId = 'default';
+    let state = {
+      users: {},
+      elements: {}
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const socket = io();
+      const working_area = document.getElementById('working_area');
+      const addRectBtn = document.getElementById('rect');
+      const changeDocBtn = document.getElementById('changeDoc');
+      changeDocBtn.onclick = changeDocument;
+
+      working_area.addEventListener("touchstart", dragStart, false);
+      working_area.addEventListener("touchend", dragEnd, false);
+      working_area.addEventListener("touchmove", drag, false);
+
+      working_area.addEventListener("mousedown", dragStart, false);
+      working_area.addEventListener("mouseup", dragEnd, false);
+      working_area.addEventListener("mousemove", drag, false);
+
+      let activeElement = null;
+      
+      function dragStart(e) {
+        if (!e.target.id || !state.elements[e.target.id]) {
+          return;
+        }
+
+        activeElement = document.getElementById(e.target.id);
+        if (e.type === "touchstart") {
+          state.elements[e.target.id].x = e.touches[0].clientX - state.elements[e.target.id].xOffset;
+          state.elements[e.target.id].y = e.touches[0].clientY - state.elements[e.target.id].yOffset;
+          return;
+        } 
+        state.elements[e.target.id].x = e.clientX - state.elements[e.target.id].xOffset;
+        state.elements[e.target.id].y = e.clientY - state.elements[e.target.id].yOffset;
+      }
+
+      function dragEnd(e) {
+        if (!activeElement) {
+          return;
+        }
+        state.elements[activeElement.id].x  = state.elements[e.target.id].xOffset;
+        state.elements[activeElement.id].y =  state.elements[e.target.id].yOffset;
+
+        const rect = activeElement.getBoundingClientRect();
+        socket.emit('element/updated', {
+          docId: docId,
+          elementId: activeElement.id,
+          changesMap: { x: rect.left, y: rect.top }
+        });
+
+        mergeState(state, {elements: {[activeElement.id]: {x: rect.left, y: rect.top }}});
+        drawState(state);
+
+        activeElement = null;
+      }
+
+      function drag(e) {
+        if (!activeElement) {
+          return;
+        }
+        e.preventDefault();
+        let currentX;
+        let currentY;
+    
+        if (e.type === "touchmove") {
+          currentX = e.touches[0].clientX - state.elements[activeElement.id].x;
+          currentY = e.touches[0].clientY - state.elements[activeElement.id].y;
+        } else {
+          currentX = e.clientX - state.elements[activeElement.id].x;
+          currentY = e.clientY - state.elements[activeElement.id].y;
+        }
+
+        state.elements[activeElement.id].xOffset = currentX;
+        state.elements[activeElement.id].yOffset = currentY;
+
+        setTranslate(currentX, currentY, activeElement);
+
+        const rect = activeElement.getBoundingClientRect();
+        socket.emit('element/updated', {
+          docId: docId,
+          elementId: activeElement.id,
+          changesMap: { x: rect.left, y: rect.top }
+        });
+      }
+
+      function setTranslate(xPos, yPos, el) {
+        el.style.transform = "translate3d(" + xPos + "px, " + yPos + "px, 0)";
+      }
+
+      async function getLatestState(docId) {
+        try {
+          const response = await axios.get(`./state/${docId}`);
+          const newState = response.data;
+          return {...newState, users: {}};
+        } catch (errors) {
+          console.error(errors);
+          return {
+            users: {},
+            elements: {}
+          }
+        }
+      }
+
+      async function fetchState() {
+        socket.emit('user/joinedDoc', { docId });
+        state = await getLatestState(docId);
+        working_area.innerHTML = '';
+        drawState(state);
+      }
+
+      function mergeState(state, changes) {
+        if (changes.users) {
+          Object.keys(changes.users).forEach((userId) => {
+            state.users[userId] = Object.assign(state.users[userId] || {}, changes.users[userId]);
+          });
+        }
+       
+        if (changes.elements) {
+          Object.keys(changes.elements).forEach((id) => {
+            state.elements[id] = Object.assign(
+              state.elements[id] || {}, 
+              {xOffset: 0, yOffset: 0},
+              changes.elements[id]);
+          });
+        }
+      }
+
+      function drawState (state) {
+        Object.keys(state.users || {}).forEach((userId) => {
+          let item = document.getElementById(userId);
+          let user = state.users[userId];
+          if (!item) {
+            item = addCursor(userId)
+          }
+          item.style.top = `${user.y}px`;
+          item.style.left = `${user.x}px`;
+        });
+        
+        Object.keys(state.elements || {}).forEach((elementId) => {
+          let item = document.getElementById(elementId);
+          let element = state.elements[elementId];
+          if (!item) {
+            item = addRect(elementId, element);
+          }
+          item.style.top = `${element.y}px`;
+          item.style.left = `${element.x}px`;
+          item.style['background-color']= element.color;
+          item.style.width = element.size;
+          item.style.height = element.size;
+          setTranslate(element.xOffset, element.yOffset, item);
+        });
+      }
+
+      function changeDocument(event) {
+        const newDocId = document.getElementById('docId').value;
+        if (docId === newDocId) {
+          return;
+        }
+
+        socket.emit('user/leftDoc', { docId: docId });
+        
+        docId = newDocId;
+        fetchState();
+      }
+
+      const addRect = (id, {color, x, y, size}) => {
+        const item = document.createElement('div');
+        item.className = 'rect';
+        item.style['background-color']= color;
+        item.id = id;
+        item.style.left = x;
+        item.style.top = y;
+        item.style.width = size;
+        item.style.height = size;
+        working_area.appendChild(item);
+        state.elements[item.id] = {xOffset: 0, yOffset: 0};
+        return item;
+      }
+
+      addRectBtn.onclick = (event) => {
+        event.preventDefault();
+        const color = `#${Math.floor(Math.random()*16777215).toString(16)}`;
+        const id = crypto.randomUUID();
+        const x = `${Math.floor(Math.random()*(working_area.clientWidth - 100)).toString(10)}px`;
+        const y = `${Math.floor(Math.random()*(working_area.clientHeight - 100)).toString(10)}px`;
+        addRect(id, {color, x, y, size:100});
+
+        socket.emit('element/updated', {
+          docId: docId,
+          elementId: id,
+          type: 'rect',
+          changesMap: { color, x, y, size: 100 }
+        })
+      }
+
+      const addCursor = (id) => {
+        const item = document.createElement('div');
+        item.className = 'cursor';
+        item.style['border-color']= `#${Math.floor(Math.random()*16777215).toString(16)} transparent transparent transparent`;
+        item.id = id; 
+        working_area.appendChild(item);
+        state.users[id] = {x: -12, y: -12};
+        return item;
+      }
+
+      working_area.onmousemove = (event) => {
+        socket.emit('user/positionChanged', {
+          docId: docId,
+          x: event.clientX, 
+          y: event.clientY
+        });
+      };
+
+      socket.io.on("reconnect", async (attempt) => {
+        const oldState = state;
+        const newState = await getLatestState(docId);
+        const diff = {};// todo get diff and send socket event with change set (not to loose changes)
+        mergeState(newState, diff);
+        state = newState;
+        drawState(state);
+      });
+
+      socket.on('state/updated', (msg) => {
+        if(docId != msg.docId) {
+          return;
+        }
+        mergeState(state, msg);
+        drawState(state);
+      });
+
+      socket.on('user/joinedDoc', (msg) => {
+        addCursor(msg.userId);
+
+      });
+      
+      socket.on('user/leftDoc', (msg) => {
+        const item = document.getElementById(msg.userId);
+        if (item) {
+          working_area.removeChild(item);
+        }
+      });
+
+      fetchState();
+  });
+    
+  </script>
+</html>

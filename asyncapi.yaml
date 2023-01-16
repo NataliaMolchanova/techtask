@@ -1,0 +1,116 @@
+asyncapi: 2.5.0
+info:
+  title: Collaboration Service
+  version: 1.0.0
+  description: This service is in charge of processing document related websocket events
+servers:
+  localhost:
+    url: localhost
+    protocol: ws
+channels:
+  user/positionChanged:
+    subscribe:
+      operationId: userPositionChanged
+      message:
+        $ref: '#/components/messages/UserPositionChanged'
+  user/joinedDoc:
+    subscribe:
+      operationId: userJoinedDoc
+      message:
+        $ref: '#/components/messages/UserJoinedDoc'
+  user/leftDoc:
+    subscribe:
+      operationId: userLeftDoc
+      message:
+        $ref: '#/components/messages/UserLeftDoc'
+  element/updated:
+    subscribe:
+      operationId: elementUpdated
+      message:
+          $ref: '#/components/messages/ElementUpdated'
+  schema/updated:
+    publish:
+      operationId: schemaUpdated
+      message:
+          $ref: '#/components/messages/SchemaUpdated'
+components:
+  schemas: 
+    user:
+      type: object
+      properties:
+        x: 
+          type: number
+        y:
+          type: number
+    element:
+      type: object
+      properties:
+        x: 
+          type: number
+        y:
+          type: number
+        color: 
+          type: string
+
+  messages:
+    UserJoinedDoc:
+        payload:
+            type: object
+            properties:
+                docId: 
+                    type: string
+    UserLeftDoc:
+        payload:
+            type: object
+            properties:
+                docId: 
+                    type: string
+    UserPositionChanged:
+      payload:
+        type: object
+        properties:
+          x:
+            type: integer
+            description: x coordinate of user's cursor
+          y:
+            type: integer
+            description: y coordinate of user's cursor
+          docId: 
+            type: string
+            description: document id
+
+    ElementUpdated:
+        payload:
+            type: object
+            properties:
+                docId: 
+                  type: string
+                  description: document id
+                elementId: 
+                  type: string
+                  description: id of moved element
+                type: 
+                  enum:
+                    -rect
+                changesMap:
+                  type: object
+                  properties: 
+                    x:
+                      type: integer
+                    y:
+                      type: integer
+                    color:
+                      type: integer
+
+    SchemaUpdated:
+        payload:
+            type: object
+            properties:
+              users: 
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/user"
+              elements: 
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/element"
